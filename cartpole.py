@@ -13,7 +13,7 @@ from torch.autograd import Variable
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
 LEARNING_RATE = .01
-BATCH_SIZE = 20
+BATCH_SIZE = 40
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
 EXPLORATION_DECAY = 0.995
@@ -31,7 +31,7 @@ def run_cartpole_random():
                 break
     env.close()
 
-def run_cartpole_dqn(runs=5):
+def run_cartpole_dqn(threshold_step = 250):
     env = gym.make(ENV_NAME)
     observation_size = env.observation_space.shape[0]
     action_size = env.action_space.n
@@ -42,7 +42,11 @@ def run_cartpole_dqn(runs=5):
     optimizer = optim.Adam(dqn.parameters(), lr=LEARNING_RATE)
     criterion = nn.MSELoss()
     run = 0
-    while run < runs:
+    step = 0
+    display = False
+    while not display:
+        if step >= threshold_step:
+            display = True
         done = False
         env = gym.make(ENV_NAME)
         run += 1
@@ -51,7 +55,7 @@ def run_cartpole_dqn(runs=5):
         step = 0
         while not done:
             step +=1
-            if run == runs:
+            if display:
                 env.render()
             action = return_action(dqn, state)
             next_state, reward, done, info = env.step(action)
@@ -62,7 +66,7 @@ def run_cartpole_dqn(runs=5):
 
             state = next_state
             if done:
-                print("run: ", run, "score", step)
+                print("run: ", run, " score: ", step)
                 env.close()
             
 
@@ -72,15 +76,15 @@ class DQN(nn.Module):
         self.exploration_rate = EXPLORATION_MAX
         self.action_space = action_size
 
-        self.fc1 = nn.Linear(observation_size, 128)
-        # self.fc2 = nn.Linear(24,24)
-        self.fc2 = nn.Linear(128, action_size)
+        self.fc1 = nn.Linear(observation_size, 24)
+        self.fc2 = nn.Linear(24,24)
+        self.fc3 = nn.Linear(24, action_size) 
         self.memory = []
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        # x = F.relu(self.fc2(x))
-        x = self.fc2(x)
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
         return x
 
 def learn(dqn, optimizer, criterion, state, action, reward, next_state, done):
@@ -112,4 +116,4 @@ def return_action(dqn, state):
     q_values = dqn(state_tensor)
     return torch.argmax(q_values).item()
 
-run_cartpole_dqn(100)
+run_cartpole_dqn(250)
