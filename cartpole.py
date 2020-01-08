@@ -7,8 +7,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
-
-
+import matplotlib.pyplot as plt 
+import os
+import csv
 
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
@@ -32,42 +33,65 @@ def run_cartpole_random():
     env.close()
 
 def run_cartpole_dqn(threshold_step = 250):
+    weights_path = "model_weights"
+    states_path = "states.csv"
     env = gym.make(ENV_NAME)
     observation_size = env.observation_space.shape[0]
     action_size = env.action_space.n
     dqn = DQN(observation_size, action_size)
-    for name, param in dqn.named_parameters():
-        if param.requires_grad == True:
-            print("\t",name)
+
     optimizer = optim.Adam(dqn.parameters(), lr=LEARNING_RATE)
     criterion = nn.MSELoss()
     run = 0
     step = 0
     display = False
-    while not display:
-        if step >= threshold_step:
-            display = True
-        done = False
-        env = gym.make(ENV_NAME)
-        run += 1
-        state = env.reset()
-        state = np.reshape(state, [1, observation_size])
-        step = 0
-        while not done:
-            step +=1
-            if display:
-                env.render()
-            action = return_action(dqn, state)
-            next_state, reward, done, info = env.step(action)
-            next_state = np.reshape(next_state, [1, observation_size])
-            if done:
-                reward = -reward
-            learn(dqn, optimizer, criterion, state, action, reward, next_state, done)
+    states = []
+    if os.path.exists(weights_path) and os.path.exists(states_path):
+        dqn.load_state_dict(torch.load(weights_path))
+        with open (states_path, "r") as f:
+            reader = csv.reader(f)
+            states = list(list(i) for i in reader)
+        states = [[float(i) for i in j] for j in states]
+    
+    else:
+        while not display:
+            if step >= threshold_step:
+                display = True
+            done = False
+            env = gym.make(ENV_NAME)
+            run += 1
+            state = env.reset()
+            state = np.reshape(state, [1, observation_size])
+            step = 0
+            while not done:
+                step +=1
+                if display:
+                    env.render()
+                action = return_action(dqn, state)
+                next_state, reward, done, info = env.step(action)
+                states.append(list(next_state))
+                next_state = np.reshape(next_state, [1, observation_size])
+                if done:
+                    reward = -reward
+                learn(dqn, optimizer, criterion, state, action, reward, next_state, done)
 
-            state = next_state
-            if done:
-                print("run: ", run, " score: ", step)
-                env.close()
+                state = next_state
+                if done:
+                    print("run: ", run, " score: ", step)
+                    env.close()
+
+        torch.save(dqn.state_dict(), weights_path)
+        print(states)
+        print("num states", len(states))
+        with open(states_path, "w") as f:
+            writer = csv.writer(f)
+            writer.writerows(states)
+
+
+    for i in range(100):
+        state = env.reset()
+
+
             
 
 class DQN(nn.Module):
@@ -116,4 +140,4 @@ def return_action(dqn, state):
     q_values = dqn(state_tensor)
     return torch.argmax(q_values).item()
 
-run_cartpole_dqn(250)
+run_cartpole_dqn(300)
