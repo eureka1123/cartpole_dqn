@@ -81,16 +81,24 @@ def run_cartpole_dqn(threshold_step = 250):
                     env.close()
 
         torch.save(dqn.state_dict(), weights_path)
-        print(states)
+        # print(states)
         print("num states", len(states))
         with open(states_path, "w") as f:
             writer = csv.writer(f)
             writer.writerows(states)
-
-
-    for i in range(100):
+    # print(max([i[0] for i in states]),max([i[1] for i in states]),max([i[2] for i in states]),max([i[3] for i in states]))
+    sample_states = random.sample(states, 10)
+    action_dict = {}
+    for state in sample_states:
         state = env.reset()
+        state_reshape = np.reshape(state, [1, observation_size])
+        state_tensor = Variable(torch.from_numpy(state_reshape)).float()
+        q_values = dqn(state_tensor)
+        action = torch.argmax(q_values).item()
+        action_dict.setdefault(action,[])
+        action_dict[action].append(state)
 
+    print(action_dict)
 
             
 
