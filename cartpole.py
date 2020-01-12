@@ -87,18 +87,38 @@ def run_cartpole_dqn(threshold_step = 250):
             writer = csv.writer(f)
             writer.writerows(states)
     # print(max([i[0] for i in states]),max([i[1] for i in states]),max([i[2] for i in states]),max([i[3] for i in states]))
-    sample_states = random.sample(states, 10)
-    action_dict = {}
-    for state in sample_states:
-        state = env.reset()
-        state_reshape = np.reshape(state, [1, observation_size])
-        state_tensor = Variable(torch.from_numpy(state_reshape)).float()
-        q_values = dqn(state_tensor)
-        action = torch.argmax(q_values).item()
-        action_dict.setdefault(action,[])
-        action_dict[action].append(state)
+    max_state = ""
+    max_num = 0
+    min_state = ""
+    min_num= len(states)
+    state_dict = {}
+    for state in states:
+        tstate = tuple([round(i,2) for i in state])
+        state_dict.setdefault(tstate,0)
+        state_dict[tstate]+=1
+        if state_dict[tstate]>max_num:
+            max_num = state_dict[tstate]
+            max_state = tstate
+        if state_dict[tstate]<min_num:
+            min_num = state_dict[tstate]
+            min_state = tstate
+    state_reshape = np.reshape(list(max_state), [1, observation_size])
+    maxstate_tensor = Variable(torch.from_numpy(state_reshape)).float()
+    state_reshape = np.reshape(list(min_state), [1, observation_size])
+    minstate_tensor = Variable(torch.from_numpy(state_reshape)).float()
+    print(max_state,max_num, dqn(maxstate_tensor), min_state,min_num,dqn(minstate_tensor))
+    # sample_states = random.sample(states, 10)
+    # action_dict = {}
+    # for state in sample_states:
+    #     state = env.reset()
+    #     state_reshape = np.reshape(state, [1, observation_size])
+    #     state_tensor = Variable(torch.from_numpy(state_reshape)).float()
+    #     q_values = dqn(state_tensor)
+    #     action = torch.argmax(q_values).item()
+    #     action_dict.setdefault(action,[])
+    #     action_dict[action].append(state)
 
-    print(action_dict)
+    # print(action_dict)
 
             
 
