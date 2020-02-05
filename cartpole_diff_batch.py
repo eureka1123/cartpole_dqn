@@ -14,23 +14,16 @@ import csv
 GAMMA = .95
 ENV_NAME = "CartPole-v1"
 LEARNING_RATE = .01
-BATCH_SIZE = 40
+BATCH_SIZE = 30
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
 EXPLORATION_DECAY = 0.995
 
-def run_cartpole_random():
-    env = gym.make(ENV_NAME)
-    for i in range(20):
-        state = env.reset()
-        for t in range(100):
-            env.render()
-            action = env.action_space.sample()
-            state, reward, done, info = env.step(action)
-            if done:
-                print("Episode finished after {} timesteps".format(t+1))
-                break
-    env.close()
+use_cuda = torch.cuda.is_available()
+FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
+LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
+BoolTensor = torch.cuda.BoolTensor if use_cuda else torch.BoolTensor
+
 
 def run_cartpole_dqn(threshold_step = 250):
     weights_path = "model_weights"
@@ -61,7 +54,7 @@ def run_cartpole_dqn(threshold_step = 250):
             env = gym.make(ENV_NAME)
             run += 1
             state = env.reset()
-            state = np.reshape(state, [1, observation_size])
+            # state = np.reshape(state, [1, observation_size])
             step = 0
             while not done:
                 step +=1
@@ -69,8 +62,8 @@ def run_cartpole_dqn(threshold_step = 250):
                     env.render()
                 action = return_action(dqn, state)
                 next_state, reward, done, info = env.step(action)
-                states.append(list(next_state))
-                next_state = np.reshape(next_state, [1, observation_size])
+                # states.append(list(next_state))
+                # next_state = np.reshape(next_state, [1, observation_size])
                 if done:
                     reward = -reward
                 learn(dqn, optimizer, criterion, state, action, reward, next_state, done)
@@ -86,41 +79,6 @@ def run_cartpole_dqn(threshold_step = 250):
         with open(states_path, "w") as f:
             writer = csv.writer(f)
             writer.writerows(states)
-    # print(max([i[0] for i in states]),max([i[1] for i in states]),max([i[2] for i in states]),max([i[3] for i in states]))
-    max_state = ""
-    max_num = 0
-    min_state = ""
-    min_num= len(states)
-    state_dict = {}
-    for state in states:
-        tstate = tuple([round(i,2) for i in state])
-        state_dict.setdefault(tstate,0)
-        state_dict[tstate]+=1
-        if state_dict[tstate]>max_num:
-            max_num = state_dict[tstate]
-            max_state = tstate
-        if state_dict[tstate]<min_num:
-            min_num = state_dict[tstate]
-            min_state = tstate
-    state_reshape = np.reshape(list(max_state), [1, observation_size])
-    maxstate_tensor = Variable(torch.from_numpy(state_reshape)).float()
-    state_reshape = np.reshape(list(min_state), [1, observation_size])
-    minstate_tensor = Variable(torch.from_numpy(state_reshape)).float()
-    print(max_state,max_num, dqn(maxstate_tensor), min_state,min_num,dqn(minstate_tensor))
-    # sample_states = random.sample(states, 10)
-    # action_dict = {}
-    # for state in sample_states:
-    #     state = env.reset()
-    #     state_reshape = np.reshape(state, [1, observation_size])
-    #     state_tensor = Variable(torch.from_numpy(state_reshape)).float()
-    #     q_values = dqn(state_tensor)
-    #     action = torch.argmax(q_values).item()
-    #     action_dict.setdefault(action,[])
-    #     action_dict[action].append(state)
-
-    # print(action_dict)
-
-            
 
 class DQN(nn.Module):
     def __init__(self, observation_size, action_size):
@@ -128,9 +86,9 @@ class DQN(nn.Module):
         self.exploration_rate = EXPLORATION_MAX
         self.action_space = action_size
 
-        self.fc1 = nn.Linear(observation_size, 24)
-        self.fc2 = nn.Linear(24,24)
-        self.fc3 = nn.Linear(24, action_size) 
+        self.fc1 = nn.Linear(observation_size, 50)
+        self.fc2 = nn.Linear(50,50)
+        self.fc3 = nn.Linear(50, action_size) 
         self.memory = []
 
     def forward(self, x):
@@ -140,24 +98,28 @@ class DQN(nn.Module):
         return x
 
 def learn(dqn, optimizer, criterion, state, action, reward, next_state, done):
-    dqn.memory.append((state, action, reward, next_state, done))
+    dqn.train()
+    dqn.memory.append((FloatTensor([state]), LongTensor([[action]]), FloatTensor([reward]), FloatTensor([next_state]), FloatTensor([0 if done else 1])))
+
     if len(dqn.memory) < BATCH_SIZE:
         return 
     batch = random.sample(dqn.memory, BATCH_SIZE)
-    for state, action, reward, next_state, done in batch:
-        state_tensor = Variable(torch.FloatTensor(state))
-        next_state_tensor = Variable(torch.FloatTensor(next_state))
-        new_q_value = reward
-        if not done:
-            new_q_value = reward + GAMMA * torch.max(dqn(next_state_tensor).detach())
-        output = dqn(state_tensor)
-        q_values = output.clone().detach()
-        q_values[0][action] = new_q_value
-        print(output[0][action], q_values[0][action])
-        loss = criterion(output[0][action], q_values[0][action])
-        loss.backward()
-    optimizer.step()
+    batch_state, batch_action, batch_reward, batch_next_state, batch_done = zip(*batch)
+
+    batch_state  = Variable(torch.cat(batch_state))
+    batch_action = Variable(torch.cat(batch_action))
+    batch_reward = Variable(torch.cat(batch_reward))
+    batch_next_state = Variable(torch.cat(batch_next_state))
+    batch_done = Variable(torch.cat(batch_done))
+
+    current_q_values = dqn(batch_state).gather(1, batch_action).view(BATCH_SIZE)
+    max_next_q_values = dqn(batch_next_state).detach().max(1)[0]
+    expected_q_values = ((GAMMA * max_next_q_values)*batch_done + batch_reward)
+    loss = criterion(current_q_values, expected_q_values)
     optimizer.zero_grad()
+    loss.backward()
+    
+    optimizer.step()
     dqn.exploration_rate *= EXPLORATION_DECAY
     dqn.exploration_rate = max(EXPLORATION_MIN, dqn.exploration_rate)
 
@@ -165,8 +127,9 @@ def learn(dqn, optimizer, criterion, state, action, reward, next_state, done):
 def return_action(dqn, state):
     if np.random.rand() < dqn.exploration_rate:
         return random.randrange(dqn.action_space)
-    state_tensor = Variable(torch.from_numpy(state)).float()
+    state_tensor = Variable(FloatTensor([state]))
     q_values = dqn(state_tensor)
     return torch.argmax(q_values).item()
 
-run_cartpole_dqn(400)
+run_cartpole_dqn(500)
+
